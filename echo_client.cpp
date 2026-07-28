@@ -59,7 +59,8 @@ int main(){
             nextSeq++;
         }
         Packet ackRecvdPkt;
-        ssize_t bytesRecived = recvfrom(sockfd, &ackRecvdPkt, sizeof(ackRecvdPkt), MSG_DONTWAIT, (sockaddr*)&serverAddr, (socklen_t*)sizeof(serverAddr));
+        socklen_t serverAddrLen = sizeof(serverAddr);
+        ssize_t bytesRecived = recvfrom(sockfd, &ackRecvdPkt, sizeof(ackRecvdPkt), MSG_DONTWAIT, (sockaddr*)&serverAddr, &serverAddrLen);
         if(bytesRecived > 0 && ackRecvdPkt.header.isAck)
         {
             uint32_t ackSeq = ntohl(ackRecvdPkt.header.seqNum);
@@ -68,6 +69,21 @@ int main(){
         
         while(window[baseSeq % WINDOW_SIZE].isAcked && baseSeq < nextSeq){
             baseSeq++;
+        }
+
+        // Timer sweep
+        for(uint32_t seq = baseSeq; seq < nextSeq; seq++){
+            int index = seq % WINDOW_SIZE;
+            if(!window[index].isAcked){
+                auto now = std::chrono::steady_clock::now();
+                auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(now - window[index].sendTime).count();
+                if(elapsed > 500){
+                    if(sendto(sockfd, &window[index].pkt, sizeof(window[index].pkt), 0, (sockaddr *)&serverAddr, sizeof(serverAddr)) > 0){
+                        window[index].sendTime = std::chrono::steady_clock::now();
+                    }
+                    
+                }
+            }
         }
     }
     close(sockfd);
