@@ -59,7 +59,6 @@ int main(){
         }
 
         uint32_t localSeqNum = ntohl(recvPkt.header.seqNum);
-        bool isAcknowledgement = recvPkt.header.isAck;
 
         // Fault injection : Drop packet
         if(dist(rng) <= DROP_PROBABILITY){

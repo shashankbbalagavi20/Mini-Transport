@@ -84,7 +84,11 @@ int main(){
         if((bytesRecived > 0 )&& (ackRecvdPkt.header.isAck) && (expectedCheckSumAckPkt == ntohs(ackRecvdPkt.checkSum)))
         {
             uint32_t ackSeq = ntohl(ackRecvdPkt.header.seqNum);
-            window[ackSeq % WINDOW_SIZE].isAcked = true;
+            int windowIndex = ackSeq % WINDOW_SIZE;
+            if(ntohl(window[windowIndex].pkt.header.seqNum) == ackSeq)
+            {
+                window[ackSeq % WINDOW_SIZE].isAcked = true;
+            }
         }
         
         while(window[baseSeq % WINDOW_SIZE].isAcked && baseSeq < nextSeq){
