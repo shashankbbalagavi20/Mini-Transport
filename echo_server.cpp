@@ -4,6 +4,7 @@
 #include <netinet/in.h>
 #include <unistd.h>
 #include "protocol.hpp"
+#include <random>
 
 int main(){
     // 1. UDP socket:
@@ -16,6 +17,7 @@ int main(){
         perror("Socket creation failed");
         return 1;
     }
+
     // 2. Server adress struct
     sockaddr_in serverAddr{};
     serverAddr.sin_family = AF_INET;            // AF_INET for IPV4
@@ -39,6 +41,10 @@ int main(){
 
     Packet recvPkt;
 
+    std::mt19937 rng(std::random_device{}());
+    std::uniform_int_distribution<int> dist(0, 100);
+    const int DROP_PROBABILITY = 30;
+
     while(true){
         ssize_t bytesRecieved = recvfrom(sockfd, &recvPkt, sizeof(recvPkt), MSG_WAITALL, (sockaddr *)&clientAddr, &len);
         if(bytesRecieved < 0){
@@ -47,6 +53,11 @@ int main(){
         }
         uint32_t localSeqNum = ntohl(recvPkt.header.seqNum);
         bool isAcknowledgement = recvPkt.header.isAck;
+
+        if(dist(rng) <= DROP_PROBABILITY){
+            std::cout << "[FAULT INJECTION] Intentionally dropped packet Sequence no : " << localSeqNum << std::endl;
+            continue;
+        }
 
         std::cout << "Recived Seq : " << localSeqNum << std::endl;
         std::cout << "Message : " << recvPkt.payLoad << std::endl;
