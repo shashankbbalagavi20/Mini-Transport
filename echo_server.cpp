@@ -3,8 +3,10 @@
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <unistd.h>
-#include "protocol.hpp"
 #include <random>
+#include <chrono>
+#include <map>
+#include "protocol.hpp"
 
 int main(){
     // 1. UDP socket:
@@ -39,11 +41,15 @@ int main(){
     sockaddr_in clientAddr{};
     socklen_t len = sizeof(clientAddr);
 
-    Packet recvPkt;
+    Packet recvPkt{};
 
     std::mt19937 rng(std::random_device{}());
     std::uniform_int_distribution<int> dist(0, 100);
     const int DROP_PROBABILITY = 30;
+
+    // In-order sequencing:
+    uint32_t expectedSequenceNumber = 1;
+    std::map<uint32_t, Packet> sequenceNoMap;
 
     while(true){
         ssize_t bytesRecieved = recvfrom(sockfd, &recvPkt, sizeof(recvPkt), MSG_WAITALL, (sockaddr *)&clientAddr, &len);
@@ -51,26 +57,57 @@ int main(){
             perror("Failed to Recieve message");
             continue;
         }
+
         uint32_t localSeqNum = ntohl(recvPkt.header.seqNum);
         bool isAcknowledgement = recvPkt.header.isAck;
 
+        // Fault injection : Drop packet
         if(dist(rng) <= DROP_PROBABILITY){
             std::cout << "[FAULT INJECTION] Intentionally dropped packet Sequence no : " << localSeqNum << std::endl;
             continue;
         }
 
-        std::cout << "Recived Seq : " << localSeqNum << std::endl;
-        std::cout << "Message : " << recvPkt.payLoad << std::endl;
+        // checksum validation :
+        uint16_t expectedCheckSum = calculateCheckSum(recvPkt.payLoad, sizeof(recvPkt.payLoad));
+        if(expectedCheckSum != ntohs(recvPkt.checkSum))
+        {
+            std::cout << "[Security] Dropped the corrupted packet of seq num : " << localSeqNum << std::endl;
+            continue;
+        }
 
-        Packet ackPkt;
+        Packet ackPkt{};
         ackPkt.header.isAck = true;
         ackPkt.header.seqNum = htonl(localSeqNum);
         std::memset(ackPkt.payLoad, 0, sizeof(ackPkt.payLoad));
+        ackPkt.checkSum = htons(calculateCheckSum(ackPkt.payLoad, sizeof(ackPkt.payLoad)));
         if(sendto(sockfd, &ackPkt, sizeof(ackPkt), 0, (const sockaddr *)&clientAddr, len) < 0)
         {
             perror("Failed to send acknowledgement");
             return 1;
         }
+
+        // In-order state machine
+        if(localSeqNum < expectedSequenceNumber)
+        {
+            std::cout << "[DUPLICATE] Ignored Seq " << localSeqNum << std::endl;
+        }
+        else if(localSeqNum > expectedSequenceNumber)
+        {
+            sequenceNoMap[localSeqNum] = recvPkt;
+            std::cout << "[BUFFERED] Out of order seq: " << localSeqNum << std::endl;
+        }
+        else
+        {
+            std::cout << "[PROCESSED] Seq : " << localSeqNum << " | Message : " << recvPkt.payLoad << std::endl;
+            expectedSequenceNumber++;
+            while(sequenceNoMap.find(expectedSequenceNumber) != sequenceNoMap.end())
+            {
+                std::cout << "[PROCESSED FROM BUFFER] Seq: " << expectedSequenceNumber << " | Message: " << sequenceNoMap[expectedSequenceNumber].payLoad << std::endl;
+                sequenceNoMap.erase(expectedSequenceNumber); // Prevent memory leak
+                expectedSequenceNumber++;
+            }
+        }
+
     }
     close(sockfd);
     return 0;

@@ -4,7 +4,11 @@
 #include <unistd.h>
 #include <arpa/inet.h>
 #include <cstring>
+#include <chrono>
+#include <random>
 #include "protocol.hpp"
+
+const int RETRANS_TIMEOUT_MS = 500;
 
 int main(){
     // Client socket
@@ -22,6 +26,10 @@ int main(){
         perror("presentation to network failed");
         return 1;
     }
+
+    // random number
+    std::mt19937 rng(std::random_device{}());
+    std::uniform_int_distribution<int> dist(0, 100);
 
     // window slot struct
     struct WindowSlot
@@ -46,11 +54,21 @@ int main(){
             int index = nextSeq % WINDOW_SIZE;
 
             window[index].pkt.header.seqNum = htonl(nextSeq);
+            std::memset(window[index].pkt.payLoad, 0, sizeof(window[index].pkt.payLoad));
             strcpy(window[index].pkt.payLoad, "Hello!");
             window[index].isAcked = false;
             window[index].sendTime = std::chrono::steady_clock::now();
+            window[index].pkt.checkSum = htons(calculateCheckSum(window[index].pkt.payLoad, sizeof(window[index].pkt.payLoad)));
 
-            if(sendto(sockfd, &window[index].pkt, sizeof(window[index].pkt), 0, (sockaddr*)&serverAddr, sizeof(serverAddr)) < 0)
+            // Intentional Fault injection
+            Packet outPacket = window[index].pkt;
+            if(dist(rng) < 20)
+            {
+                outPacket.checkSum += 1;
+                std::cout << "[Fault Injection] Corrupted checksum for sequence : " << nextSeq << std::endl;
+            }
+
+            if(sendto(sockfd, &outPacket, sizeof(outPacket), 0, (sockaddr*)&serverAddr, sizeof(serverAddr)) < 0)
             {
                 perror("send to failed");
                 return 1;
@@ -58,10 +76,12 @@ int main(){
 
             nextSeq++;
         }
-        Packet ackRecvdPkt;
+
+        Packet ackRecvdPkt{};
         socklen_t serverAddrLen = sizeof(serverAddr);
         ssize_t bytesRecived = recvfrom(sockfd, &ackRecvdPkt, sizeof(ackRecvdPkt), MSG_DONTWAIT, (sockaddr*)&serverAddr, &serverAddrLen);
-        if(bytesRecived > 0 && ackRecvdPkt.header.isAck)
+        uint16_t expectedCheckSumAckPkt = calculateCheckSum(ackRecvdPkt.payLoad, sizeof(ackRecvdPkt.payLoad));
+        if((bytesRecived > 0 )&& (ackRecvdPkt.header.isAck) && (expectedCheckSumAckPkt == ntohs(ackRecvdPkt.checkSum)))
         {
             uint32_t ackSeq = ntohl(ackRecvdPkt.header.seqNum);
             window[ackSeq % WINDOW_SIZE].isAcked = true;
@@ -77,7 +97,7 @@ int main(){
             if(!window[index].isAcked){
                 auto now = std::chrono::steady_clock::now();
                 auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(now - window[index].sendTime).count();
-                if(elapsed > 500){
+                if(elapsed > RETRANS_TIMEOUT_MS){
                     if(sendto(sockfd, &window[index].pkt, sizeof(window[index].pkt), 0, (sockaddr *)&serverAddr, sizeof(serverAddr)) > 0){
                         window[index].sendTime = std::chrono::steady_clock::now();
                     }
