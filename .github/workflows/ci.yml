@@ -19,6 +19,11 @@ jobs:
         brew update
         brew install googletest
 
+    - name: Compile Production Binaries
+      run: |
+        clang++ -std=c++17 -O3 echo_server.cpp -o server
+        clang++ -std=c++17 -O3 echo_client.cpp -o client
+
     - name: Compile Master Test Suite
       run: |
         clang++ -std=c++17 -O3 tests/protocol_tests.cpp -I. -I/opt/homebrew/include -L/opt/homebrew/lib -lgtest -lgtest_main -pthread -o test_protocol

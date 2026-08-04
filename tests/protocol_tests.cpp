@@ -26,7 +26,10 @@ TEST(ReliableUDP, ChecksumCalculation) {
 // ==========================================
 TEST(ReliableUDP, OutOfOrderRecovery) {
     const int TEST_PORT = 8082; 
-    const int TOTAL_PACKETS = 3;
+    
+    // Increased to 10 to force the sliding window to wrap (WINDOW_SIZE is 5)
+    // This explicitly tests the ACK-aliasing sequence validation check.
+    const int TOTAL_PACKETS = 10;
     
     // ------------------------------------------
     // SERVER THREAD 
@@ -126,9 +129,13 @@ TEST(ReliableUDP, OutOfOrderRecovery) {
         socklen_t serverAddrLen = sizeof(serverAddr);
         ssize_t bytesRecived = recvfrom(sockfd, &ackRecvdPkt, sizeof(ackRecvdPkt), MSG_DONTWAIT, (sockaddr*)&serverAddr, &serverAddrLen);
         
+        // SEQUENCE ALIASING CHECK: Validates against array slot reuse bugs
         if(bytesRecived > 0 && ackRecvdPkt.header.isAck) {
             uint32_t ackSeq = ntohl(ackRecvdPkt.header.seqNum);
-            window[ackSeq % WINDOW_SIZE].isAcked = true;
+            int windowIndex = ackSeq % WINDOW_SIZE;
+            if(ntohl(window[windowIndex].pkt.header.seqNum) == ackSeq) {
+                window[windowIndex].isAcked = true;
+            }
         }
         
         while(window[baseSeq % WINDOW_SIZE].isAcked && baseSeq < nextSeq){
