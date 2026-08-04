@@ -21,8 +21,11 @@ To empirically demonstrate the reliability of the protocol, the system features 
 
 *Under maximum fault injection, the server successfully rejects all corrupted data via checksum validation, buffers out-of-order sequences, and achieves perfect data reassembly via client timeout retransmissions.*
 
-## Tooling & Memory Safety
+## 🚀 Build Instructions
 
-*   **Language:** C++17
-*   **Compiler:** Clang / Apple LLVM
-*   **Memory Profiling:** Hardened and profiled using LLVM AddressSanitizer (`-fsanitize=address`). The hot path and out-of-order buffer are confirmed leak-free.
+This project requires a C++17 compatible compiler (Clang/GCC). 
+
+**To compile the client/server binaries:**
+```bash
+clang++ -std=c++17 -O3 echo_server.cpp -o server
+clang++ -std=c++17 -O3 echo_client.cpp -o client
