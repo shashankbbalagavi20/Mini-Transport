@@ -1,0 +1,27 @@
+name: Mini-Transport CI
+
+on:
+  push:
+    branches: [ "master" ]
+  pull_request:
+    branches: [ "master" ]
+
+jobs:
+  build-and-test:
+    runs-on: macos-latest
+
+    steps:
+    - name: Checkout Repository
+      uses: actions/checkout@v4
+
+    - name: Install Dependencies
+      run: |
+        brew update
+        brew install googletest
+
+    - name: Compile Master Test Suite
+      run: |
+        clang++ -std=c++17 -O3 tests/protocol_tests.cpp -I. -I/opt/homebrew/include -L/opt/homebrew/lib -lgtest -lgtest_main -pthread -o test_protocol
+
+    - name: Execute Automated Assertions
+      run: ./test_protocol
