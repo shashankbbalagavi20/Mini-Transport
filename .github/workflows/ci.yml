@@ -19,14 +19,11 @@ jobs:
         brew update
         brew install googletest
 
-    - name: Compile Production Binaries
-      run: |
-        clang++ -std=c++17 -O3 echo_server.cpp -o server
-        clang++ -std=c++17 -O3 echo_client.cpp -o client
+    - name: Configure CMake
+      run: cmake -B build -DCMAKE_BUILD_TYPE=Release
 
-    - name: Compile Master Test Suite
-      run: |
-        clang++ -std=c++17 -O3 tests/protocol_tests.cpp -I. -I/opt/homebrew/include -L/opt/homebrew/lib -lgtest -lgtest_main -pthread -o test_protocol
+    - name: Build All Targets (Server, Client, Tests)
+      run: cmake --build build --config Release
 
-    - name: Execute Automated Assertions
-      run: ./test_protocol
+    - name: Execute Test Suite via CTest
+      run: ctest --test-dir build --output-on-failure
